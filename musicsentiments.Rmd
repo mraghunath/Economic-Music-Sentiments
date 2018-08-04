@@ -1,0 +1,64 @@
+---
+title: "Music and Economic Sentiment"
+author: "Madhuri Raghunath"
+date: "7/25/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r install_rspotify, include=FALSE}
+install_github("tiagomendesdantas/Rspotify")
+```
+
+```{r install_packages, echo=FALSE, warning=FALSE}
+library(stats)
+library(tidyverse)
+library(devtools)
+library(lubridate)
+library(scales)
+```
+
+```{r obtain_consumer_sentiments, echo=FALSE, warning=FALSE}
+# import consumer sentiment data
+full_consumer_data <- read_csv("tbmics.csv")
+# filter to include data from 2006 onwards
+cdat <- full_consumer_data %>%
+                  filter(YYYY >= 2006)
+concat_date <- paste(cdat$Month,cdat$YYYY)
+concat_date <- parse_date_time(concat_date, orders = "bY")
+#concat_date <- substr(concat_date,1,7)
+cdat <- cdat %>% mutate(concat_date) %>% mutate(id = 1:150)
+```
+
+```{r plot_consumer_index, warning=FALSE}
+cdat$concat_date <- as.Date(cdat$concat_date)
+ggplot(cdat, aes(x=concat_date, y=ICS_ALL)) +
+  geom_line(stat = "identity") +
+  geom_point() +
+  scale_x_date(labels = date_format("%m-%Y")) + 
+  xlab("Date") + ylab("ICS")
+```
+
+```{r obtain_spotify_data}
+library(Rspotify)
+keys <- spotifyOAuth(app_id = "economicsentiments.rmd", client_id = "d180a8b2c34d4cc9bdece7c8f5de7d5a", client_secret = "4cdfdc376ce843e8a39524e6fb29d33e")
+```
+
+```{r}
+potential_artists <- searchArtist("Drake",token = keys)
+artist_id <- potential_artists[1,2]
+#albums <- getAlbums(artist_id, token = keys)
+#album_id <- albums[1,1]
+#songs <- getAlbum(album_id, token = keys)
+#song_id <- songs[8,1]
+#song_sentiment <- getFeatures(song_id, token = keys); song_sentiment <- song_sentiment[,c(1:5,11:12)]
+#song_sentiment
+```
+
+```{r}
+
+```
+
