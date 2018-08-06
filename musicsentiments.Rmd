@@ -9,11 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r install_rspotify, include=FALSE}
-install_github("tiagomendesdantas/Rspotify")
-```
-
-```{r install_packages, echo=FALSE, warning=FALSE}
+```{r install_packages, include=FALSE, warning=FALSE}
 library(stats)
 library(tidyverse)
 library(devtools)
@@ -21,7 +17,7 @@ library(lubridate)
 library(scales)
 ```
 
-```{r obtain_consumer_sentiments, echo=FALSE, warning=FALSE}
+```{r obtain_consumer_sentiment_data, include=FALSE, warning=FALSE}
 # import consumer sentiment data
 full_consumer_data <- read_csv("tbmics.csv")
 # filter to include data from 2006 onwards
@@ -29,7 +25,6 @@ cdat <- full_consumer_data %>%
                   filter(YYYY >= 2006)
 concat_date <- paste(cdat$Month,cdat$YYYY)
 concat_date <- parse_date_time(concat_date, orders = "bY")
-#concat_date <- substr(concat_date,1,7)
 cdat <- cdat %>% mutate(concat_date) %>% mutate(id = 1:150)
 ```
 
@@ -42,22 +37,73 @@ ggplot(cdat, aes(x=concat_date, y=ICS_ALL)) +
   xlab("Date") + ylab("ICS")
 ```
 
+```{r obtain_billboard_data, echo=FALSE, warning=FALSE}
+bbdat <- read_csv("bb_charts.csv")
+```
+
+```{r install_rspotify, include=FALSE}
+install_github("tiagomendesdantas/Rspotify")
+```
+
 ```{r obtain_spotify_data}
 library(Rspotify)
+keys <- spotifyOAuth(app_id = "economicsentiments.rmd", client_id = "d180a8b2c34d4cc9bdece7c8f5de7d5a", client_secret = "4cdfdc376ce843e8a39524e6fb29d33e")
 ```
 
 ```{r}
-potential_artists <- searchArtist("Drake",token = keys)
-artist_id <- potential_artists[1,2]
-#albums <- getAlbums(artist_id, token = keys)
-#album_id <- albums[1,1]
-#songs <- getAlbum(album_id, token = keys)
-#song_id <- songs[8,1]
-#song_sentiment <- getFeatures(song_id, token = keys); song_sentiment <- song_sentiment[,c(1:5,11:12)]
-#song_sentiment
+dat <- data.frame(song=character(),
+                 song_id=character(), 
+                 singer=character(), 
+                 stringsAsFactors=FALSE) 
+
+#for (i in 1:nrow(bbdat)) {
+#  potential_tracks = searchTrack(bbdat[i,]$song, token = keys)
+#  final_track = potential_tracks %>%
+#                    filter(display_name == bbdat[i,]$song) %>%
+#                    filter(unlist(Map(function(x, y) grepl(x, y), artists, bbdat[i,]$artist))) %>%
+#                    slice(1L) %>%
+#                    select(display_name, id, artists)
+#  dat = rbind(dat, final_track)
+#}
 ```
 
 ```{r}
+all_songs = data.frame(row.names = NULL)
+dat = data.frame(row.names = NULL)
+bbdat$clean_artist = NA
 
+for (i in 1:nrow(bbdat)) {
+  # Truncate strings to obtain main artist name
+  bbdat[i,"clean_artist"] = sub(",.*","",bbdat[i,"artist"]) %>% trimws("right")
+  bbdat[i,"clean_artist"] = sub("&.*","",bbdat[i,"clean_artist"]) %>% trimws("right")
+  bbdat[i,"clean_artist"] = sub("Featuring.*","",bbdat[i,"clean_artist"]) %>% trimws("right")
+}
+  # Search for main artist in Spotify
+  #potential_artists = searchArtist(bbdat[i,]$clean_artist, token = keys)
+  #rbind(dat,potential_artists)
+
+  #final_artist = potential_artists %>%
+                    #filter(display_name == bbdat[i,]$clean_artist) %>%
+                    #slice(1L) %>% select(potential_artists$id)
+  
+  # Search for artists' albums
+  #potential_albums <- getAlbums(final_artist$id, token = keys)
+  
+  # Find song match after parsing through all albums
+  #for (j in 1:nrow(potential_albums)) {
+  #  all_songs = rbind(all_songs, getAlbum(potential_albums[j,]$id, token = keys))
+  #}
+  
+  #all_songs = all_songs %>% 
+                #filter(name == bbdat[i,]$song) %>%
+                #select(all_songs$id, all_songs$name) %>% slice(1L)
+  
+  # Find song features
+ # features <- getFeatures(all_songs$id, token = keys)
+ # dat = all_songs %>% as_tibble() %>% mutate(
+  #  features$danceability, features$energy, 
+  #  features$loudness, features$tempo, features$valence)
+ # dat = as.data.frame(dat)
+#}
 ```
 
