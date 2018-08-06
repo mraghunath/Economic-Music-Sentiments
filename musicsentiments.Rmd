@@ -47,7 +47,6 @@ install_github("tiagomendesdantas/Rspotify")
 
 ```{r obtain_spotify_data}
 library(Rspotify)
-keys <- spotifyOAuth(app_id = "economicsentiments.rmd", client_id = "d180a8b2c34d4cc9bdece7c8f5de7d5a", client_secret = "4cdfdc376ce843e8a39524e6fb29d33e")
 ```
 
 ```{r}
