@@ -1,5 +1,5 @@
 ---
-title: "Music and Economic Sentiment"
+title: "Music and Economic Sentiments"
 author: "Madhuri Raghunath"
 date: "7/25/2018"
 output: html_document
@@ -9,100 +9,299 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r install_packages, include=FALSE, warning=FALSE}
-library(stats)
-library(tidyverse)
+```{r install_packages, include=FALSE}
 library(devtools)
+library(httr)
+library(jsonlite)
+library(plyr)
+library(tidyverse)
 library(lubridate)
+library(stats)
 library(scales)
+library(ggplot2)
+library(tseries)
+library(urca)
+library(vars)
+library(tsDyn)
+library(bsts)
+library(reshape2)
 ```
 
-```{r obtain_consumer_sentiment_data, include=FALSE, warning=FALSE}
-# import consumer sentiment data
-full_consumer_data <- read_csv("tbmics.csv")
-# filter to include data from 2006 onwards
+```{r import_consumer_sentiment_data, include=FALSE}
+full_consumer_data <- read_csv("tbmics.csv", col_types = list(
+  Month = col_character(),
+  YYYY = col_integer(),
+  ICS_ALL = col_double()
+))
+
+# only include years 2006 to 2018
 cdat <- full_consumer_data %>%
                   filter(YYYY >= 2006)
+
+# create MM-YYYY date column
 concat_date <- paste(cdat$Month,cdat$YYYY)
 concat_date <- parse_date_time(concat_date, orders = "bY")
-cdat <- cdat %>% mutate(concat_date) %>% mutate(id = 1:150)
+cdat <- cdat %>% mutate(concat_date)
+cdat$concat_date <- as.character(cdat$concat_date)
+cdat$concat_date <- substr(cdat$concat_date, 1, 7)
+cdat = cdat[,c("ICS_ALL","concat_date")]
 ```
 
-```{r plot_consumer_index, warning=FALSE}
-cdat$concat_date <- as.Date(cdat$concat_date)
-ggplot(cdat, aes(x=concat_date, y=ICS_ALL)) +
+```{r plot_consumer_sentiments}
+con_date = parse_date_time(cdat$concat_date, orders = "Ym")
+con_date = as.Date(con_date)
+
+ggplot(cdat, aes(x=con_date, y=ICS_ALL)) +
   geom_line(stat = "identity") +
   geom_point() +
   scale_x_date(labels = date_format("%m-%Y")) + 
-  xlab("Date") + ylab("ICS")
+  xlab("Date") + ylab("Consumer Sentiment")
 ```
 
-```{r obtain_billboard_data, echo=FALSE, warning=FALSE}
-bbdat <- read_csv("bb_charts.csv")
+```{r import_billboard_data, include=FALSE}
+bbdat = read_csv("bb_charts.csv", col_types = list(
+  X1 = col_integer(),
+  artist = col_character(),
+  date = col_date(format = ""),
+  song = col_character()
+))
 ```
 
-```{r install_rspotify, include=FALSE}
+```{r install_spotify_packages, include=FALSE}
 install_github("tiagomendesdantas/Rspotify")
+install_github("charlie86/spotifyr")
 ```
 
-```{r obtain_spotify_data}
+```{r connect_to_spotify_api, include=FALSE}
+library(spotifyr)
+Sys.setenv(SPOTIFY_CLIENT_ID = "d180a8b2c34d4cc9bdece7c8f5de7d5a")
+Sys.setenv(SPOTIFY_CLIENT_SECRET = "4cdfdc376ce843e8a39524e6fb29d33e")
+access_token <- get_spotify_access_token()
+
 library(Rspotify)
+keys <- spotifyOAuth(app_id = "economicsentiments.rmd", client_id = "d180a8b2c34d4cc9bdece7c8f5de7d5a", client_secret = "4cdfdc376ce843e8a39524e6fb29d33e")
 ```
 
-```{r}
-dat <- data.frame(song=character(),
-                 song_id=character(), 
-                 singer=character(), 
-                 stringsAsFactors=FALSE) 
+```{r combine_billboard_spotify, include=FALSE}
+# create data frame placeholder
+song_dat = tibble()
 
-#for (i in 1:nrow(bbdat)) {
-#  potential_tracks = searchTrack(bbdat[i,]$song, token = keys)
-#  final_track = potential_tracks %>%
-#                    filter(display_name == bbdat[i,]$song) %>%
-#                    filter(unlist(Map(function(x, y) grepl(x, y), artists, bbdat[i,]$artist))) %>%
-#                    slice(1L) %>%
-#                    select(display_name, id, artists)
-#  dat = rbind(dat, final_track)
-#}
-```
-
-```{r}
-all_songs = data.frame(row.names = NULL)
-dat = data.frame(row.names = NULL)
-bbdat$clean_artist = NA
+# truncate strings to obtain the main artist of the song
+bbdat$clean_artist = NULL
+bbdat$clean_artist = sub(",.*","",bbdat$artist) %>% trimws("right")
+bbdat$clean_artist = sub("&.*","",bbdat$clean_artist) %>% trimws("right")
+bbdat$clean_artist = sub("Featuring.*","",bbdat$clean_artist) %>% trimws("right")
 
 for (i in 1:nrow(bbdat)) {
-  # Truncate strings to obtain main artist name
-  bbdat[i,"clean_artist"] = sub(",.*","",bbdat[i,"artist"]) %>% trimws("right")
-  bbdat[i,"clean_artist"] = sub("&.*","",bbdat[i,"clean_artist"]) %>% trimws("right")
-  bbdat[i,"clean_artist"] = sub("Featuring.*","",bbdat[i,"clean_artist"]) %>% trimws("right")
+  tryCatch({
+  # search for artists' albums
+  albums = get_artist_albums(bbdat[[i, "clean_artist"]])
+  tracks = get_album_tracks(albums)
+  
+  # search for specific song in track list
+  song = tracks %>% 
+            filter(track_name == bbdat[[i,"song"]])
+  
+  # obtain song features
+  if(empty(song)) {
+    next 
+  } else {
+  features = get_track_audio_features(song)
+  }
+  
+  # join data frames
+  song_dat = rbind(song_dat, features)
+  }, error=function(e){})
 }
-  # Search for main artist in Spotify
-  #potential_artists = searchArtist(bbdat[i,]$clean_artist, token = keys)
-  #rbind(dat,potential_artists)
-
-  #final_artist = potential_artists %>%
-                    #filter(display_name == bbdat[i,]$clean_artist) %>%
-                    #slice(1L) %>% select(potential_artists$id)
-  
-  # Search for artists' albums
-  #potential_albums <- getAlbums(final_artist$id, token = keys)
-  
-  # Find song match after parsing through all albums
-  #for (j in 1:nrow(potential_albums)) {
-  #  all_songs = rbind(all_songs, getAlbum(potential_albums[j,]$id, token = keys))
-  #}
-  
-  #all_songs = all_songs %>% 
-                #filter(name == bbdat[i,]$song) %>%
-                #select(all_songs$id, all_songs$name) %>% slice(1L)
-  
-  # Find song features
- # features <- getFeatures(all_songs$id, token = keys)
- # dat = all_songs %>% as_tibble() %>% mutate(
-  #  features$danceability, features$energy, 
-  #  features$loudness, features$tempo, features$valence)
- # dat = as.data.frame(dat)
-#}
 ```
 
+```{r append_song_details, include=FALSE}
+# create data frame placeholder
+song_names = tibble()
+
+for (i in 1:nrow(song_dat)) {
+  # get track information
+  track_names = getTrack(song_dat[[i, "track_uri"]], token = keys)
+  song_names = rbind(song_names, track_names)
+}
+```
+
+```{r join_dfs, include=FALSE}
+dat = cbind(song_dat, song_names)
+dat = dat[,c("danceability", "energy", "valence", "tempo", "loudness", "duration_ms", "id", "name", "artists")]
+bbdat = bbdat[,c("date", "song", "artist")]
+
+# left outer join
+comb_dat = cbind(dat[match(bbdat$song, dat$name),], bbdat)
+
+# drop any rows with NAs (no feature information available)
+comb_dat = comb_dat[,c("date", "song", "artist", "danceability", "energy", "valence", "tempo", "loudness", "duration_ms")]
+comb_dat = comb_dat %>% drop_na()
+```
+
+```{r create_monthly_data_pts, include=FALSE}
+# calculate average of all variables
+avg_feats = aggregate(comb_dat[,4:8], list(comb_dat$date), mean)
+
+# change to YYYY-mm format to match ICS data
+avg_feats$Group.1 = format(avg_feats$Group.1, format = "%Y-%m")
+
+# remove last two months + double Jan 2018 record to match ICS data
+avg_feats = avg_feats[c(1:145,147:151),]
+
+# join data frames
+finaldat = cbind(cdat[match(avg_feats$Group.1, cdat$concat_date),], avg_feats)
+finaldat = finaldat[,c("concat_date", "ICS_ALL", "danceability", "energy", "valence", "tempo", "loudness")]
+```
+
+```{r transformations, include=FALSE}
+# create date variable
+finaldat$concat_date = parse_date_time(finaldat$concat_date, orders = "Ym")
+finaldat$concat_date = as.Date(finaldat$concat_date)
+
+# log ICS and tempo to fit scales for other variables
+finaldat$log_ICS = log(finaldat$ICS_ALL)
+finaldat$log_tempo = log(finaldat$tempo)
+
+# create interaction terms
+finaldat$dancetempo = finaldat$danceability * finaldat$tempo
+finaldat$energyloud = finaldat$energy * finaldat$loudness
+```
+
+```{r plot_standard_variables}
+ggplot(finaldat, aes(x=concat_date)) +
+  geom_line(aes(y=danceability), colour = "orange") + 
+  geom_line(aes(y=energy), colour="red") + 
+  geom_line(aes(y=valence), colour = "grey") + 
+  scale_x_date(labels = date_format("%m-%Y")) +
+  xlab("Date") + ylab("")
+```
+
+```{r plot_logged_variables}
+ggplot(finaldat, aes(x=concat_date)) +
+  geom_line(aes(y=log_ICS), colour = "dark blue") + 
+  geom_line(aes(y=log_tempo), colour="dark green") + 
+  scale_x_date(labels = date_format("%m-%Y")) +
+  xlab("Date") + ylab("")
+```
+
+```{r plot_loudness}
+ggplot(finaldat, aes(x=concat_date)) +
+  geom_line(aes(y=loudness), colour = "dark blue") + 
+  scale_x_date(labels = date_format("%m-%Y")) +
+  xlab("Date") + ylab("")
+```
+
+```{r time_series_analysis, include=FALSE}
+# convert to time series variables
+ICS_ts = ts(finaldat$log_ICS, start=c(2006,1), end=c(2018,08), frequency=12)
+tempo_ts = ts(finaldat$log_tempo, start=c(2006,1), end=c(2018,08), frequency=12)
+energy_ts = ts(finaldat$energy, start=c(2006,1), end=c(2018,08), frequency=12)
+dance_ts = ts(finaldat$danceability, start=c(2006,1), end=c(2018,08), frequency=12)
+valence_ts = ts(finaldat$valence, start=c(2006,1), end=c(2018,08), frequency=12)
+loud_ts = ts(finaldat$loudness, start=c(2006,1), end=c(2018,08), frequency=12)
+```
+
+```{r seasonal_decomposition_exploratory}
+ICS_fit = stl(ICS_ts, s.window="period")
+tempo_fit = stl(tempo_ts, s.window="period")
+en_fit = stl(energy_ts, s.window="period")
+dance_fit = stl(dance_ts, s.window="period")
+val_fit = stl(valence_ts, s.window="period")
+loud_fit = stl(loud_ts, s.window="period")
+```
+
+```{r plot_seasonality}
+vars = list(ICS_fit, tempo_fit, en_fit, dance_fit, val_fit, loud_fit)
+plot_season = function(variable) { plot(variable) }
+invisible(lapply(vars, plot_season))
+```
+# Tempo and danceability appear to be closely related to ICS
+
+```{r determine_optimal_lag}
+VARselect(finaldat[,c(8,3:5,7,9)], lag.max = 75, type = "const")$selection
+acf_val = acf(finaldat[,c(8,3:5,7,9)])
+acf_lag = acf_val$lag
+```
+
+```{r conduct_stationary_tests}
+tsvars = list(finaldat$log_ICS, finaldat$log_tempo, finaldat$energy, finaldat$danceability, finaldat$valence, finaldat$loudness)
+stationary = function(variable) { adf.test(variable, k = 13) }
+lapply(tsvars, stationary)
+```
+# All variables are non-stationary with lag=9. ICS is within .003 of the .05 cut-off, so we'll conclude that it is non-stationary and continue with our analysis.
+
+```{r johansen_model, warning=FALSE}
+jotest=ca.jo(finaldat[,c(8,3:5,7,9)], type="trace", K=13, ecdet="none", spec = "longrun")
+summary(jotest)
+```
+## There are three cointegrating (long-run) relationships
+
+```{r}
+# linear combination to make time series stationary
+s = 1*finaldat$log_ICS - 3.8135738*finaldat$danceability + 0.6207492*finaldat$energy - 14.7403757*finaldat$valence + 1.0444801*finaldat$loudness + 9.0061217*finaldat$log_tempo
+plot(s, type="l")
+adf.test(s, k=13)
+```
+# Relatively stationary; pvalue = 0.06
+
+```{r run_vecm}
+vecm = cajorls(jotest, r=1)
+vecm
+```
+# Valence, danceability and tempo seem to have strong relationships to ICS
+
+```{r bayesian_variable_selection}
+### From https://github.com/klarsen1/bstspost ###
+
+# Find seasonality and trend
+ss <- AddLocalLinearTrend(list(), finaldat$log_ICS)
+ss <- AddSeasonal(ss, finaldat$log_ICS, nseasons = 30)
+
+# Fit regression model
+bsts.reg <- bsts(finaldat$log_ICS ~ finaldat$danceability + finaldat$energy + finaldat$valence + finaldat$loudness + finaldat$log_tempo, state.specification = ss, data = finaldat, niter = 500, ping=0)
+
+# Get the number of burn-ins to discard
+burn <- SuggestBurn(0.1, bsts.reg)
+
+# Find positive mean of a vector
+PositiveMean <- function(b) {
+  b <- b[abs(b) > 0]
+  if (length(b) > 0) 
+    return(mean(b))
+  return(0)
+}
+
+# Obtain average coefficients
+coeff <- data.frame(melt(apply(bsts.reg$coefficients[-(1:burn),], 2, PositiveMean)))
+coeff$Variable <- as.character(row.names(coeff))
+ggplot(data=coeff, aes(x=Variable, y=value)) + 
+  geom_bar(stat="identity", position="identity") + 
+  theme(axis.text.x=element_text(angle = -90, hjust = 0)) +
+  xlab("") + ylab("") + ggtitle("Average coefficients")
+```
+# According to the Bayesian Variable Selection model, valence, danceability and energy have strong relationships to ICS
+
+```{r plot_relationship_1}
+plot(finaldat$log_ICS, type ="l", xlab = "Time", ylab = "ICS", col = "blue")
+par(new = TRUE)
+plot(finaldat$danceability, type = "l", xaxt = "n", yaxt = "n",
+     ylab = "", xlab = "", col = "dark grey")
+axis(side = 4)
+legend("topleft", c("Log(ICS)", "Danceability"),
+       col = c("blue", "dark grey"), lty = c(1, 1))
+```
+
+```{r plot_relationship_2}
+plot(finaldat$log_ICS, type ="l", xlab = "Time", ylab = "ICS", col = "blue")
+par(new = TRUE)
+plot(finaldat$valence, type = "l", xaxt = "n", yaxt = "n",
+     ylab = "", xlab = "", col = "dark green")
+axis(side = 4)
+legend("topleft", c("Log(ICS)", "Valence"),
+       col = c("blue", "dark grey"), lty = c(1, 1))
+```
+
+```{r add_interaction_terms}
+
+```
