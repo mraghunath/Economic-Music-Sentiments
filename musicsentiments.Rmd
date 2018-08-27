@@ -72,16 +72,6 @@ install_github("tiagomendesdantas/Rspotify")
 install_github("charlie86/spotifyr")
 ```
 
-```{r connect_to_spotify_api, include=FALSE}
-library(spotifyr)
-Sys.setenv(SPOTIFY_CLIENT_ID = "d180a8b2c34d4cc9bdece7c8f5de7d5a")
-Sys.setenv(SPOTIFY_CLIENT_SECRET = "4cdfdc376ce843e8a39524e6fb29d33e")
-access_token <- get_spotify_access_token()
-
-library(Rspotify)
-keys <- spotifyOAuth(app_id = "economicsentiments.rmd", client_id = "d180a8b2c34d4cc9bdece7c8f5de7d5a", client_secret = "4cdfdc376ce843e8a39524e6fb29d33e")
-```
-
 ```{r combine_billboard_spotify, include=FALSE}
 # create data frame placeholder
 song_dat = tibble()
