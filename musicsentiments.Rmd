@@ -58,6 +58,7 @@ ggplot(cdat, aes(x=con_date, y=ICS_ALL)) +
   xlab("Date") + ylab("Consumer Sentiment")
 ```
 
+# Billboard/Spotify pre-processing requires overnight run. To bypass this process, use totalsongs.csv file in Github folder and skip to create_monthly_data_pts chunk in code:
 ```{r import_billboard_data, include=FALSE}
 bbdat = read_csv("bb_charts.csv", col_types = list(
   X1 = col_integer(),
@@ -129,6 +130,7 @@ comb_dat = comb_dat[,c("date", "song", "artist", "danceability", "energy", "vale
 comb_dat = comb_dat %>% drop_na()
 ```
 
+# If using totalsongs.csv file, begin running code from this chunk:
 ```{r create_monthly_data_pts, include=FALSE}
 # calculate average of all variables
 avg_feats = aggregate(comb_dat[,4:8], list(comb_dat$date), mean)
